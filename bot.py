@@ -10,14 +10,14 @@ from telegram import (
     InlineKeyboardMarkup
 )
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from telegram.error import BadRequest
 
 # ================= CONFIG =================
 BOT_TOKEN = "8765397132:AAGNYEkPQf0BlZ26ZgSopRbX-AXQh0KqKoE"
+
 CHANNEL_ID = "@PRBD_CHANNEL"
 CHANNEL_LINK = "https://t.me/PRBD_CHANNEL"
 
-VIDEO_FILE_ID = "BAACAgUAAxkBAANtaZzf9KA0xqYaG5s6ZJE0B46xttsAAvMeAAIU0-FUts7bqoiBshg6BA"   # 🔥 Pehle None rakho
+VIDEO_FILE_ID = "BAACAgUAAxkBAANtaZzf9KA0xqYaG5s6ZJE0B46xttsAAvMeAAIU0-FUts7bqoiBshg6BA"
 # ==========================================
 
 
@@ -102,13 +102,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # -------- MESSAGE HANDLER --------
 async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    # 🔥 VIDEO AUTO DETECT SYSTEM
-    if update.message.video:
-        file_id = update.message.video.file_id
-        await update.message.reply_text(f"✅ Your Video File ID:\n\n`{file_id}`", parse_mode="Markdown")
-        return
-
-    # Safety check
     if not update.message or not update.message.text:
         return
 
@@ -145,12 +138,7 @@ async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Pehle Gmail add karein.")
 
     elif text == "📺 Watch Video Guide":
-        if VIDEO_FILE_ID:
-            await update.message.reply_video(VIDEO_FILE_ID, caption="Setup Guide")
-        else:
-            await update.message.reply_text(
-                "❌ Video ID set nahi hai.\n\nBot ko video bhejo to file_id mil jayega."
-            )
+        await update.message.reply_video(VIDEO_FILE_ID, caption="Setup Guide")
 
     elif text == "📧 Add Gmail":
         await update.message.reply_text("📥 Gmail bhejein:")
@@ -177,7 +165,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.ALL, handle_all))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all))
 
     app.run_polling(drop_pending_updates=True)
 
