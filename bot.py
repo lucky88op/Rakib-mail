@@ -17,7 +17,7 @@ BOT_TOKEN = "8765397132:AAGNYEkPQf0BlZ26ZgSopRbX-AXQh0KqKoE"
 CHANNEL_ID = "@PRBD_CHANNEL"
 CHANNEL_LINK = "https://t.me/PRBD_CHANNEL"
 
-VIDEO_FILE_ID = None   # 🔥 Pehle None rakho
+VIDEO_FILE_ID = "BAACAgUAAxkBAANtaZzf9KA0xqYaG5s6ZJE0B46xttsAAvMeAAIU0-FUts7bqoiBshg6BA"   # 🔥 Pehle None rakho
 # ==========================================
 
 
