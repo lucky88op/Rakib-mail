@@ -2,6 +2,7 @@ import imaplib
 import email
 import re
 import random
+import asyncio
 from telegram import (
     ReplyKeyboardMarkup,
     KeyboardButton,
@@ -28,27 +29,45 @@ VIDEO_FILE_ID = "BAACAgUAAxkBAANtaZzf9KA0xqYaG5s6ZJE0B46xttsAAvMeAAIU0-FUts7bqoi
 # ==========================================
 
 
-# -------- FORCE JOIN --------
-async def is_user_joined(context, user_id):
+# -------- AUTO DELETE --------
+async def auto_delete(bot, chat, user_msg, bot_msg):
+    await asyncio.sleep(2)
     try:
-        member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
-        return member.status in ["member", "administrator", "creator"]
+        await bot.delete_message(chat, user_msg)
+        await bot.delete_message(chat, bot_msg)
+    except:
+        pass
+
+
+# -------- LOADING ANIMATION --------
+async def loading(message):
+    steps = ["⏳ Processing.", "⏳ Processing..", "⏳ Processing..."]
+    for s in steps:
+        await message.edit_text(s)
+        await asyncio.sleep(0.5)
+
+
+# -------- FORCE JOIN --------
+async def is_user_joined(context, uid):
+    try:
+        m = await context.bot.get_chat_member(CHANNEL_ID, uid)
+        return m.status in ["member", "administrator", "creator"]
     except:
         return False
 
 
 # -------- OTP FETCH --------
-def fetch_latest_otp(user_email, app_pass):
+def fetch_latest_otp(mail, password):
     try:
-        mail = imaplib.IMAP4_SSL("imap.gmail.com")
-        mail.login(user_email, app_pass)
-        mail.select("INBOX")
+        imap = imaplib.IMAP4_SSL("imap.gmail.com")
+        imap.login(mail, password)
+        imap.select("INBOX")
 
-        status, messages = mail.search(None, "ALL")
-        ids = messages[0].split()
+        _, msgs = imap.search(None, "ALL")
+        ids = msgs[0].split()
 
-        for mail_id in reversed(ids[-15:]):
-            _, data = mail.fetch(mail_id, "(RFC822)")
+        for i in reversed(ids[-15:]):
+            _, data = imap.fetch(i, "(RFC822)")
             msg = email.message_from_bytes(data[0][1])
 
             if "telegram" not in msg.get("From", "").lower():
@@ -57,7 +76,7 @@ def fetch_latest_otp(user_email, app_pass):
             body = ""
             if msg.is_multipart():
                 for part in msg.walk():
-                    if part.get_content_type() == "text/plain":
+                    if part.get_content_type()=="text/plain":
                         body = part.get_payload(decode=True).decode(errors="ignore")
                         break
             else:
@@ -67,18 +86,18 @@ def fetch_latest_otp(user_email, app_pass):
             if otp:
                 return f"🔐 *Latest Telegram OTP*\n\n`{otp.group()}`"
 
-        return "❌ No OTP found yet."
+        return "❌ No OTP found."
 
     except Exception as e:
-        return f"⚠️ Error: {e}"
+        return f"⚠️ {e}"
 
 
-# -------- KEYBOARD --------
-def main_keyboard():
+# -------- MAIN KEYBOARD --------
+def keyboard():
     return ReplyKeyboardMarkup([
-        [KeyboardButton("📧 Add Gmail"), KeyboardButton("🔑 Set App Password")],
-        [KeyboardButton("✨ Generate Email"), KeyboardButton("📩 Get OTP")],
-        [KeyboardButton("📺 How To Use")]
+        ["📧 Add Gmail", "🔑 Set App Password"],
+        ["✨ Generate Email", "📩 Get OTP"],
+        ["📺 How To Use"]
     ], resize_keyboard=True)
 
 
@@ -87,159 +106,159 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if await is_user_joined(context, update.effective_user.id):
         await update.message.reply_text(
-            "✨ *Welcome to Premium Mail Generator Bot*\n\n"
-            "Generate unlimited email variations & receive OTP instantly.",
+            "✨ *Premium Mail Generator*\n\n"
+            "Generate unlimited email variants & receive OTP instantly.",
             parse_mode="Markdown",
-            reply_markup=main_keyboard()
+            reply_markup=keyboard()
         )
     else:
-        btn = [[InlineKeyboardButton("✅ Join Channel", url=CHANNEL_LINK)]]
+        btn=[[InlineKeyboardButton("Join Channel",url=CHANNEL_LINK)]]
         await update.message.reply_text(
-            "Access restricted.\nPlease join our official channel first.",
+            "Join our channel to continue.",
             reply_markup=InlineKeyboardMarkup(btn)
         )
 
 
 # -------- MAIL GENERATOR --------
-def generate_mail(base, ud):
-
+def gen_mail(base, ud):
     name, domain = base.split("@")
-    ud.setdefault("generated", set())
+    ud.setdefault("set", set())
 
     while True:
-        rn = "".join(
-            c.upper() if random.choice([True, False]) else c.lower()
-            for c in name
-        )
+        rn="".join(random.choice([c.upper(),c.lower()]) for c in name)
+        rd="".join(random.choice([c.upper(),c.lower()]) for c in domain)
+        m=f"{rn}@{rd}"
 
-        rd = "".join(
-            c.upper() if random.choice([True, False]) else c.lower()
-            for c in domain
-        )
-
-        mail = f"{rn}@{rd}"
-
-        if mail not in ud["generated"]:
-            ud["generated"].add(mail)
-            return mail
+        if m not in ud["set"]:
+            ud["set"].add(m)
+            return m
 
 
-# -------- MESSAGE HANDLER --------
+# -------- HANDLER --------
 async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not update.message:
         return
 
     if not await is_user_joined(context, update.effective_user.id):
-        btn=[[InlineKeyboardButton("Join Channel",url=CHANNEL_LINK)]]
-        await update.message.reply_text(
-            "Please join channel first.",
-            reply_markup=InlineKeyboardMarkup(btn))
         return
 
-    text = update.message.text
-    ud = context.user_data
+    text=update.message.text
+    ud=context.user_data
 
-    if text == "📧 Add Gmail":
-        ud["step"] = "mail"
-        await update.message.reply_text("Please send your Gmail address.")
+    if text=="📧 Add Gmail":
+        ud["step"]="mail"
+        await update.message.reply_text("Send Gmail address.")
 
-    elif text == "🔑 Set App Password":
-        ud["step"] = "pass"
-        await update.message.reply_text("Send your Gmail App Password.")
+    elif text=="🔑 Set App Password":
+        ud["step"]="pass"
+        await update.message.reply_text("Send App Password.")
 
-    elif ud.get("step") == "mail":
-        ud["email"] = text.strip()
-        ud["step"] = None
-        await update.message.reply_text("✅ Gmail successfully saved.")
+    elif ud.get("step")=="mail":
+        ud["email"]=text.strip()
+        ud["step"]=None
 
-    elif ud.get("step") == "pass":
-        ud["pass"] = text.replace(" ", "")
-        ud["step"] = None
-        await update.message.reply_text("✅ App password saved securely.")
+        msg=await update.message.reply_text("✅ Gmail Added")
+        asyncio.create_task(auto_delete(
+            context.bot,
+            update.effective_chat.id,
+            update.message.message_id,
+            msg.message_id
+        ))
 
-    # EMAIL GENERATE
-    elif text == "✨ Generate Email":
+    elif ud.get("step")=="pass":
+        ud["pass"]=text.replace(" ","")
+        ud["step"]=None
+
+        msg=await update.message.reply_text("✅ Password Saved")
+        asyncio.create_task(auto_delete(
+            context.bot,
+            update.effective_chat.id,
+            update.message.message_id,
+            msg.message_id
+        ))
+
+    # GENERATE EMAIL
+    elif text=="✨ Generate Email":
 
         if not ud.get("email"):
-            await update.message.reply_text("Add Gmail first.")
-            return
+            return await update.message.reply_text("Add Gmail first.")
 
-        mail = generate_mail(ud["email"], ud)
+        m=await update.message.reply_text("⏳ Generating...")
+        await loading(m)
 
-        kb = InlineKeyboardMarkup([
+        mail=gen_mail(ud["email"],ud)
+
+        kb=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Generate New Email",
                                   callback_data="new_mail")]
         ])
 
-        await update.message.reply_text(
+        await m.edit_text(
             f"📧 *Generated Email*\n\n`{mail}`",
             parse_mode="Markdown",
             reply_markup=kb
         )
 
     # OTP
-    elif text == "📩 Get OTP":
+    elif text=="📩 Get OTP":
 
         if not ud.get("email") or not ud.get("pass"):
-            await update.message.reply_text("Setup Gmail & App Password first.")
-            return
+            return await update.message.reply_text("Setup required.")
 
-        msg = await update.message.reply_text("🔎 Checking mailbox...")
+        m=await update.message.reply_text("🔎 Checking mailbox...")
+        await loading(m)
 
-        otp = fetch_latest_otp(ud["email"], ud["pass"])
+        otp=fetch_latest_otp(ud["email"],ud["pass"])
 
-        kb = InlineKeyboardMarkup([
+        kb=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Refresh OTP",
                                   callback_data="refresh_otp")]
         ])
 
-        await msg.edit_text(
+        await m.edit_text(
             otp,
             parse_mode="Markdown",
             reply_markup=kb
         )
 
-    elif text == "📺 How To Use":
-        await update.message.reply_video(
-            VIDEO_FILE_ID,
-            caption="Follow this guide to setup the bot."
-        )
+    elif text=="📺 How To Use":
+        await update.message.reply_video(VIDEO_FILE_ID)
 
 
-# -------- BUTTON CALLBACK --------
+# -------- BUTTONS --------
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    query = update.callback_query
-    await query.answer()
+    q=update.callback_query
+    await q.answer()
 
-    ud = context.user_data
+    ud=context.user_data
 
-    if query.data == "new_mail":
+    if q.data=="new_mail":
 
-        mail = generate_mail(ud["email"], ud)
+        mail=gen_mail(ud["email"],ud)
 
-        kb = InlineKeyboardMarkup([
+        kb=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Generate New Email",
                                   callback_data="new_mail")]
         ])
 
-        await query.edit_message_text(
+        await q.edit_message_text(
             f"📧 *Generated Email*\n\n`{mail}`",
             parse_mode="Markdown",
             reply_markup=kb
         )
 
-    elif query.data == "refresh_otp":
+    elif q.data=="refresh_otp":
 
-        otp = fetch_latest_otp(ud["email"], ud["pass"])
+        otp=fetch_latest_otp(ud["email"],ud["pass"])
 
-        kb = InlineKeyboardMarkup([
+        kb=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Refresh OTP",
                                   callback_data="refresh_otp")]
         ])
 
-        await query.edit_message_text(
+        await q.edit_message_text(
             otp,
             parse_mode="Markdown",
             reply_markup=kb
@@ -249,14 +268,14 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # -------- MAIN --------
 def main():
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    app=Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
+    app.add_handler(CommandHandler("start",start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,handle))
     app.add_handler(CallbackQueryHandler(buttons))
 
     app.run_polling(drop_pending_updates=True)
 
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
