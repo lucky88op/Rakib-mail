@@ -9,7 +9,14 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup
 )
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    filters,
+    ContextTypes
+)
 
 # ================= CONFIG =================
 BOT_TOKEN = "8765397132:AAGNYEkPQf0BlZ26ZgSopRbX-AXQh0KqKoE"
@@ -21,7 +28,7 @@ VIDEO_FILE_ID = "BAACAgUAAxkBAANtaZzf9KA0xqYaG5s6ZJE0B46xttsAAvMeAAIU0-FUts7bqoi
 # ==========================================
 
 
-# -------- FORCE JOIN CHECK --------
+# -------- FORCE JOIN --------
 async def is_user_joined(context, user_id):
     try:
         member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
@@ -30,7 +37,7 @@ async def is_user_joined(context, user_id):
         return False
 
 
-# -------- OTP FETCH FUNCTION --------
+# -------- OTP FETCH --------
 def fetch_latest_otp(user_email, app_pass):
     try:
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
@@ -38,24 +45,17 @@ def fetch_latest_otp(user_email, app_pass):
         mail.select("INBOX")
 
         status, messages = mail.search(None, "ALL")
-        if status != "OK":
-            return "❌ Mail search failed."
-
         mail_ids = messages[0].split()
-        latest_15 = mail_ids[-15:]
 
-        for mail_id in reversed(latest_15):
+        for mail_id in reversed(mail_ids[-15:]):
             status, data = mail.fetch(mail_id, "(RFC822)")
-            if status != "OK":
-                continue
-
             msg = email.message_from_bytes(data[0][1])
-            sender = msg.get("From", "")
 
-            if "telegram" not in sender.lower():
+            if "telegram" not in msg.get("From", "").lower():
                 continue
 
             body = ""
+
             if msg.is_multipart():
                 for part in msg.walk():
                     if part.get_content_type() == "text/plain":
@@ -66,11 +66,12 @@ def fetch_latest_otp(user_email, app_pass):
 
             otp = re.search(r"\b\d{5,6}\b", body)
             if otp:
-                return f"🔐 *Telegram OTP*\n\n`{otp.group()}`\n\n_Tap to copy_"
+                return f"🔐 *Telegram OTP*\n\n`{otp.group()}`"
 
-        return "❌ Telegram OTP mail nahi mila."
+        return "❌ OTP nahi mila."
+
     except Exception as e:
-        return f"❌ Error: {str(e)}"
+        return f"❌ Error: {e}"
 
 
 # -------- KEYBOARD --------
@@ -84,114 +85,157 @@ def get_kb():
 
 # -------- START --------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
 
-    if await is_user_joined(context, user_id):
+    if await is_user_joined(context, update.effective_user.id):
         await update.message.reply_text(
-            "🤖 Bot Ready! Buttons ka use karein.",
+            "✅ Bot Ready",
             reply_markup=get_kb()
         )
     else:
-        keyboard = [[InlineKeyboardButton("Join Channel", url=CHANNEL_LINK)]]
+        btn = [[InlineKeyboardButton("Join Channel", url=CHANNEL_LINK)]]
         await update.message.reply_text(
-            "❌ Pehle channel join karein.",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            "❌ Channel Join Required",
+            reply_markup=InlineKeyboardMarkup(btn)
         )
+
+
+# -------- GENERATE MAIL --------
+def generate_random_mail(base, ud):
+
+    name, domain = base.split("@")
+
+    ud.setdefault("generated_set", set())
+
+    while True:
+        rn = "".join(
+            c.upper() if random.choice([True, False]) else c.lower()
+            for c in name
+        )
+
+        rd = "".join(
+            c.upper() if random.choice([True, False]) else c.lower()
+            for c in domain
+        )
+
+        mail = f"{rn}@{rd}"
+
+        if mail not in ud["generated_set"]:
+            ud["generated_set"].add(mail)
+            return mail
 
 
 # -------- MESSAGE HANDLER --------
 async def handle_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not update.message or not update.message.text:
+    if not update.message:
         return
 
-    user_id = update.effective_user.id
-
-    if not await is_user_joined(context, user_id):
-        keyboard = [[InlineKeyboardButton("Join Channel", url=CHANNEL_LINK)]]
+    if not await is_user_joined(context, update.effective_user.id):
+        btn = [[InlineKeyboardButton("Join Channel", url=CHANNEL_LINK)]]
         await update.message.reply_text(
-            "🚨 Pehle channel join karein!",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            "🚨 Join Channel First",
+            reply_markup=InlineKeyboardMarkup(btn)
         )
         return
 
     text = update.message.text
     ud = context.user_data
 
-    # -------- OTP --------
-    if text == "📩 Get Fresh OTP":
-        if not ud.get("email") or not ud.get("pass"):
-            await update.message.reply_text("❌ Pehle Gmail aur App Password set karein.")
-        else:
-            msg = await update.message.reply_text("🔎 Searching for OTP...")
-            res = fetch_latest_otp(ud["email"], ud["pass"])
-            await msg.edit_text(res, parse_mode="Markdown")
-
-    # -------- RANDOM CASE EMAIL GENERATOR --------
-    elif text == "🔀 Generate Alias":
-        if ud.get("email"):
-            original_email = ud["email"]
-
-            if "generated_set" not in ud:
-                ud["generated_set"] = set()
-
-            name, domain = original_email.split("@")
-
-            while True:
-                random_name = "".join(
-                    c.upper() if random.choice([True, False]) else c.lower()
-                    for c in name
-                )
-
-                random_domain = "".join(
-                    c.upper() if random.choice([True, False]) else c.lower()
-                    for c in domain
-                )
-
-                new_email = f"{random_name}@{random_domain}"
-
-                if new_email not in ud["generated_set"]:
-                    ud["generated_set"].add(new_email)
-                    break
-
-            await update.message.reply_text(
-                f"✅ New Email Generated:\n\n`{new_email}`\n\nTap to copy",
-                parse_mode="Markdown"
-            )
-        else:
-            await update.message.reply_text("❌ Pehle Gmail add karein.")
-
-    # -------- VIDEO --------
-    elif text == "📺 Watch Video Guide":
-        await update.message.reply_video(VIDEO_FILE_ID, caption="Setup Guide")
-
-    # -------- SAVE EMAIL --------
-    elif text == "📧 Add Gmail":
-        await update.message.reply_text("📥 Gmail bhejein:")
+    # ADD EMAIL
+    if text == "📧 Add Gmail":
         ud["step"] = "email"
+        await update.message.reply_text("Send Gmail")
 
     elif text == "🔑 Set App Pass":
-        await update.message.reply_text("📥 App Password bhejein:")
         ud["step"] = "pass"
+        await update.message.reply_text("Send App Password")
 
-    else:
-        if ud.get("step") == "email":
-            ud["email"] = text.strip()
-            ud["step"] = None
-            await update.message.reply_text("✅ Gmail saved.")
+    # SAVE DATA
+    elif ud.get("step") == "email":
+        ud["email"] = text.strip()
+        ud["step"] = None
+        await update.message.reply_text("✅ Gmail Saved")
 
-        elif ud.get("step") == "pass":
-            ud["pass"] = text.replace(" ", "")
-            ud["step"] = None
-            await update.message.reply_text("✅ App Password saved.")
+    elif ud.get("step") == "pass":
+        ud["pass"] = text.replace(" ", "")
+        ud["step"] = None
+        await update.message.reply_text("✅ App Password Saved")
+
+    # GENERATE MAIL
+    elif text == "🔀 Generate Alias":
+
+        if not ud.get("email"):
+            await update.message.reply_text("❌ Add Gmail first")
+            return
+
+        new_mail = generate_random_mail(ud["email"], ud)
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                "🔀 Generate New Mail",
+                callback_data="new_mail"
+            )]
+        ])
+
+        await update.message.reply_text(
+            f"✅ New Email:\n\n`{new_mail}`",
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+
+    # OTP
+    elif text == "📩 Get Fresh OTP":
+
+        if not ud.get("email") or not ud.get("pass"):
+            await update.message.reply_text("❌ Gmail/AppPass missing")
+            return
+
+        msg = await update.message.reply_text("Searching OTP...")
+        res = fetch_latest_otp(ud["email"], ud["pass"])
+        await msg.edit_text(res, parse_mode="Markdown")
+
+    # VIDEO
+    elif text == "📺 Watch Video Guide":
+        await update.message.reply_video(VIDEO_FILE_ID)
+
+
+# -------- BUTTON CALLBACK --------
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    ud = context.user_data
+
+    if query.data == "new_mail":
+
+        if not ud.get("email"):
+            return
+
+        new_mail = generate_random_mail(ud["email"], ud)
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                "🔀 Generate New Mail",
+                callback_data="new_mail"
+            )]
+        ])
+
+        await query.edit_message_text(
+            f"✅ New Email:\n\n`{new_mail}`",
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
 
 
 # -------- MAIN --------
 def main():
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all))
+    app.add_handler(CallbackQueryHandler(button_callback))
 
     app.run_polling(drop_pending_updates=True)
 
